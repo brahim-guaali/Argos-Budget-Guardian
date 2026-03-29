@@ -78,8 +78,9 @@ class CostTracker:
             self._events.append(event)
             self._session_totals[event.session_id] += event.cost_usd
             self._global_total += event.cost_usd
+            callbacks = list(self._callbacks)
 
-        for callback in self._callbacks:
+        for callback in callbacks:
             try:
                 callback(event)
             except Exception:
@@ -150,11 +151,13 @@ class CostTracker:
 
     def on_update(self, callback: UpdateCallback) -> None:
         """Register a callback to be notified on every cost event."""
-        self._callbacks.append(callback)
+        with self._lock:
+            self._callbacks.append(callback)
 
     def remove_callback(self, callback: UpdateCallback) -> None:
         """Remove a previously registered callback."""
-        self._callbacks = [cb for cb in self._callbacks if cb is not callback]
+        with self._lock:
+            self._callbacks = [cb for cb in self._callbacks if cb is not callback]
 
     @property
     def events(self) -> list[CostEvent]:

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
-from datetime import date, datetime, timezone
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from argos_budget_guardian.core.tracker import CostEvent
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = Path.home() / ".argos-budget-guardian" / "history.db"
 
@@ -56,73 +60,80 @@ class Store:
     def __init__(self, db_path: Path | str | None = None) -> None:
         self._db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self._db_path))
+        self._lock = threading.Lock()
+        self._closed = False
+        self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
 
     def save_event(self, event: CostEvent) -> None:
         """Save a single cost event."""
-        # Ensure session exists
-        self._conn.execute(
-            """INSERT INTO sessions (session_id, started_at, total_cost_usd, num_events)
-               VALUES (?, ?, 0, 0)
-               ON CONFLICT(session_id) DO NOTHING""",
-            (event.session_id, event.timestamp.isoformat()),
-        )
+        with self._lock:
+            # Ensure session exists — track whether this is a new session for daily counts
+            cursor = self._conn.execute(
+                """INSERT INTO sessions (session_id, started_at, total_cost_usd, num_events)
+                   VALUES (?, ?, 0, 0)
+                   ON CONFLICT(session_id) DO NOTHING""",
+                (event.session_id, event.timestamp.isoformat()),
+            )
+            is_new_session = cursor.rowcount > 0
 
-        # Insert event
-        self._conn.execute(
-            """INSERT INTO cost_events
-               (timestamp, model, tool_name, input_tokens, output_tokens,
-                cache_read_tokens, cache_creation_tokens, cost_usd, session_id, agent_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                event.timestamp.isoformat(),
-                event.model,
-                event.tool_name,
-                event.input_tokens,
-                event.output_tokens,
-                event.cache_read_tokens,
-                event.cache_creation_tokens,
-                event.cost_usd,
-                event.session_id,
-                event.agent_id,
-            ),
-        )
+            # Insert event
+            self._conn.execute(
+                """INSERT INTO cost_events
+                   (timestamp, model, tool_name, input_tokens, output_tokens,
+                    cache_read_tokens, cache_creation_tokens, cost_usd, session_id, agent_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    event.timestamp.isoformat(),
+                    event.model,
+                    event.tool_name,
+                    event.input_tokens,
+                    event.output_tokens,
+                    event.cache_read_tokens,
+                    event.cache_creation_tokens,
+                    event.cost_usd,
+                    event.session_id,
+                    event.agent_id,
+                ),
+            )
 
-        # Update session totals
-        self._conn.execute(
-            """UPDATE sessions
-               SET total_cost_usd = total_cost_usd + ?,
-                   num_events = num_events + 1
-               WHERE session_id = ?""",
-            (event.cost_usd, event.session_id),
-        )
+            # Update session totals
+            self._conn.execute(
+                """UPDATE sessions
+                   SET total_cost_usd = total_cost_usd + ?,
+                       num_events = num_events + 1
+                   WHERE session_id = ?""",
+                (event.cost_usd, event.session_id),
+            )
 
-        # Update daily totals
-        today = event.timestamp.strftime("%Y-%m-%d")
-        self._conn.execute(
-            """INSERT INTO daily_totals (date, total_cost_usd, num_sessions, num_events)
-               VALUES (?, ?, 0, 1)
-               ON CONFLICT(date) DO UPDATE SET
-                   total_cost_usd = total_cost_usd + ?,
-                   num_events = num_events + 1""",
-            (today, event.cost_usd, event.cost_usd),
-        )
+            # Update daily totals (use UTC date from event timestamp for consistency)
+            utc_date = event.timestamp.strftime("%Y-%m-%d")
+            new_sessions_inc = 1 if is_new_session else 0
+            self._conn.execute(
+                """INSERT INTO daily_totals (date, total_cost_usd, num_sessions, num_events)
+                   VALUES (?, ?, ?, 1)
+                   ON CONFLICT(date) DO UPDATE SET
+                       total_cost_usd = total_cost_usd + ?,
+                       num_sessions = num_sessions + ?,
+                       num_events = num_events + 1""",
+                (utc_date, event.cost_usd, new_sessions_inc, event.cost_usd, new_sessions_inc),
+            )
 
-        self._conn.commit()
+            self._conn.commit()
 
     def finalize_session(self, session_id: str, total_cost: float) -> None:
         """Mark a session as ended and set its final cost."""
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """UPDATE sessions
-               SET ended_at = ?, total_cost_usd = ?
-               WHERE session_id = ?""",
-            (now, total_cost, session_id),
-        )
-        self._conn.commit()
+        with self._lock:
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """UPDATE sessions
+                   SET ended_at = ?, total_cost_usd = ?
+                   WHERE session_id = ?""",
+                (now, total_cost, session_id),
+            )
+            self._conn.commit()
 
     def get_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent sessions ordered by start time."""
@@ -143,11 +154,11 @@ class Store:
         return [dict(row) for row in rows]
 
     def get_today_total(self) -> float:
-        """Get total cost for today."""
-        today = date.today().isoformat()
+        """Get total cost for today (UTC)."""
+        today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         row = self._conn.execute(
             "SELECT total_cost_usd FROM daily_totals WHERE date = ?",
-            (today,),
+            (today_utc,),
         ).fetchone()
         return row["total_cost_usd"] if row else 0.0
 
@@ -197,10 +208,18 @@ class Store:
 
     def close(self) -> None:
         """Close the database connection."""
-        self._conn.close()
+        if not self._closed:
+            self._closed = True
+            self._conn.close()
 
     def __enter__(self) -> Store:
         return self
 
     def __exit__(self, *args: Any) -> None:
         self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass

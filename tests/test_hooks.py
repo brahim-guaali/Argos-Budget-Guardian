@@ -4,7 +4,7 @@ import pytest
 
 from argos_budget_guardian.core.budget import BudgetPolicy
 from argos_budget_guardian.core.tracker import CostEvent, CostTracker
-from argos_budget_guardian.hooks.budget_hook import make_budget_hook
+from argos_budget_guardian.hooks.budget_hook import BudgetHook, make_budget_hook
 from argos_budget_guardian.hooks.stop_hook import make_stop_hook
 
 
@@ -123,6 +123,52 @@ class TestBudgetHook:
         result = await hook(_make_input(), "tu1", None)
         assert result["decision"] == "block"
 
+    @pytest.mark.asyncio
+    async def test_returns_budget_hook_instance(self):
+        tracker = CostTracker()
+        policy = BudgetPolicy(max_cost_usd=10.0)
+        hook = make_budget_hook(tracker, policy)
+        assert isinstance(hook, BudgetHook)
+
+    @pytest.mark.asyncio
+    async def test_reset_rearms_warnings(self):
+        """After reset(), warning is emitted again on the next call."""
+        tracker = CostTracker()
+        tracker.record(
+            CostEvent.create(model="s", tool_name="t", cost_usd=8.5, session_id="s1")
+        )
+        policy = BudgetPolicy(max_cost_usd=10.0, warn_at_percent=80.0)
+        hook = make_budget_hook(tracker, policy)
+
+        # First call emits warning
+        result1 = await hook(_make_input(), "tu1", None)
+        assert "Budget warning" in result1.get("systemMessage", "")
+
+        # Second call — warning already emitted, no message
+        result2 = await hook(_make_input(), "tu1", None)
+        assert result2 == {}
+
+        # After reset, warning emitted again
+        hook.reset()
+        result3 = await hook(_make_input(), "tu1", None)
+        assert "Budget warning" in result3.get("systemMessage", "")
+
+    @pytest.mark.asyncio
+    async def test_limit_callback_only_once_per_cycle(self, tracker_with_cost):
+        """Limit callback fires once per cycle, re-fires after reset."""
+        received = []
+        policy = BudgetPolicy(max_cost_usd=5.0, action_on_limit="stop")
+        hook = make_budget_hook(
+            tracker_with_cost, policy, on_limit=lambda c, m: received.append((c, m))
+        )
+        await hook(_make_input(), "tu1", None)
+        await hook(_make_input(), "tu2", None)
+        assert len(received) == 1  # Only fired once
+
+        hook.reset()
+        await hook(_make_input(), "tu3", None)
+        assert len(received) == 2  # Fired again after reset
+
 
 class TestStopHook:
     @pytest.mark.asyncio
@@ -132,7 +178,7 @@ class TestStopHook:
             CostEvent.create(model="s", tool_name="t", cost_usd=1.5, session_id="s1")
         )
         received = []
-        def _on_end(sid, cost):  # noqa: E731
+        def _on_end(sid, cost):
             received.append((sid, cost))
         hook = make_stop_hook(tracker, on_session_end=_on_end)
         await hook(

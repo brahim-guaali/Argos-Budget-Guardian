@@ -8,6 +8,7 @@ import pytest
 
 from argos_budget_guardian.core.budget import BudgetPolicy
 from argos_budget_guardian.core.tracker import CostEvent, CostTracker
+from argos_budget_guardian.hooks.budget_hook import BudgetHook
 from argos_budget_guardian.wrapper.guardian import GuardedAgent
 
 # Helper to patch ClaudeCodeOptions so GuardedAgent can be constructed without the SDK.
@@ -35,6 +36,10 @@ class TestGuardedAgentBuildOptions:
         assert "PreToolUse" in opts.hooks
         assert "Stop" in opts.hooks
         assert "SubagentStop" in opts.hooks
+
+    def test_budget_hook_is_stored(self) -> None:
+        agent = _make_agent(budget=5.0)
+        assert isinstance(agent._budget_hook, BudgetHook)
 
     def test_merges_user_hooks(self) -> None:
         user_matcher = MagicMock()
@@ -82,12 +87,13 @@ class TestGuardedAgentProperties:
 
     def test_total_cost(self) -> None:
         agent = _make_agent(budget=10.0)
+        # Use the agent's own session_id so scope-aware properties work
         agent._tracker.record(
             CostEvent.create(
                 model="claude-sonnet-4-6",
                 tool_name="test",
                 cost_usd=2.50,
-                session_id="s1",
+                session_id=agent.session_id,
             )
         )
         assert agent.total_cost == 2.50
@@ -101,10 +107,30 @@ class TestGuardedAgentProperties:
         assert "Total Cost" in report
         assert "Budget" in report
         assert "$10.00" in report
+        assert "session" in report  # Shows scope
 
     def test_session_id_generated(self) -> None:
         agent = _make_agent(budget=5.0)
         assert agent.session_id  # Non-empty UUID
+
+
+    def test_budget_remaining_is_scope_aware(self) -> None:
+        """Session-scoped budget_remaining only counts the agent's own session."""
+        agent = _make_agent(budget=10.0)
+        # Cost in a *different* session should not affect budget_remaining
+        agent._tracker.record(
+            CostEvent.create(
+                model="claude-sonnet-4-6",
+                tool_name="test",
+                cost_usd=5.0,
+                session_id="other-session",
+            )
+        )
+        # Agent's own session has zero cost
+        assert agent.budget_remaining == 10.0
+        assert agent.utilization_percent == 0.0
+        # But total_cost includes all sessions
+        assert agent.total_cost == 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -149,17 +175,18 @@ class TestGuardedAgentCostTracking:
     @pytest.mark.asyncio
     async def test_reconcile_adjusts_global_total(self) -> None:
         agent = _make_agent(budget=5.0)
+        sid = agent.session_id
         agent._tracker.record(
             CostEvent.create(
                 model="claude-sonnet-4-6",
                 tool_name="api_call",
                 cost_usd=0.05,
-                session_id="s1",
+                session_id=sid,
             )
         )
         assert agent.total_cost == pytest.approx(0.05)
 
-        agent._tracker.reconcile("s1", 0.03)
+        agent._tracker.reconcile(sid, 0.03)
         assert agent.total_cost == pytest.approx(0.03)
         assert agent.budget_remaining == pytest.approx(4.97)
 

@@ -35,7 +35,7 @@ class TestBudgetPolicy:
         assert p.utilization_percent(0) == 0.0
         assert p.utilization_percent(5.0) == 50.0
         assert p.utilization_percent(10.0) == 100.0
-        assert p.utilization_percent(15.0) == 100.0  # Capped at 100
+        assert p.utilization_percent(15.0) == 150.0  # Can exceed 100% (e.g. warn mode)
 
     def test_invalid_max_cost(self):
         with pytest.raises(ValueError, match="must be positive"):

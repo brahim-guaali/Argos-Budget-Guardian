@@ -9,6 +9,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from argos_budget_guardian.core.store import DEFAULT_DB_PATH, Store
+
 app = typer.Typer(
     name="argos",
     help="Argos Budget Guardian — Real-time cost tracking for the Claude Agent SDK",
@@ -28,18 +30,15 @@ def setup() -> None:
 @app.command()
 def status() -> None:
     """Show current cost tracking status."""
-    from argos_budget_guardian.core.store import Store
-
-    try:
-        store = Store()
-    except Exception:
+    if not DEFAULT_DB_PATH.exists():
         console.print(
             "[yellow]No cost history found. Run an agent with GuardedAgent first.[/yellow]"
         )
         return
 
-    today_total = store.get_today_total()
-    sessions = store.get_sessions(limit=1)
+    with Store() as store:
+        today_total = store.get_today_total()
+        sessions = store.get_sessions(limit=1)
 
     console.print()
     console.print("[bold]Argos Budget Guardian — Status[/bold]")
@@ -56,27 +55,21 @@ def status() -> None:
         console.print("  [dim]No sessions recorded yet.[/dim]")
     console.print()
 
-    store.close()
-
 
 @app.command()
 def history(
     limit: int = typer.Option(20, "--limit", "-n", help="Number of sessions to show"),
 ) -> None:
     """Show past session cost history."""
-    from argos_budget_guardian.core.store import Store
-
-    try:
-        store = Store()
-    except Exception:
+    if not DEFAULT_DB_PATH.exists():
         console.print("[yellow]No cost history found.[/yellow]")
         return
 
-    sessions = store.get_sessions(limit=limit)
+    with Store() as store:
+        sessions = store.get_sessions(limit=limit)
 
     if not sessions:
         console.print("[yellow]No sessions recorded yet.[/yellow]")
-        store.close()
         return
 
     table = Table(title="Session History", show_header=True, header_style="bold cyan")
@@ -105,8 +98,6 @@ def history(
     n = len(sessions)
     console.print(f"\n  Total across {n} sessions: [bold green]${total:.4f}[/bold green]\n")
 
-    store.close()
-
 
 @app.command()
 def dashboard() -> None:
@@ -132,11 +123,9 @@ def dashboard() -> None:
     run_dashboard(tracker, policy)
 
 
-@app.command()
-def config(
-    show: bool = typer.Option(True, "--show", help="Show current configuration"),
-) -> None:
-    """View or edit configuration."""
+@app.command(name="config")
+def show_config() -> None:
+    """View current configuration."""
     config_path = Path.home() / ".argos-budget-guardian" / "config.toml"
 
     if not config_path.exists():
@@ -149,33 +138,34 @@ def config(
 
 @app.command()
 def export(
-    format: str = typer.Option("csv", "--format", "-f", help="Export format: csv or json"),
+    output_format: str = typer.Option(
+        "csv", "--format", "-f", help="Export format: csv or json"
+    ),
     output: str = typer.Option(
         "argos_export", "--output", "-o", help="Output file path (without extension)"
     ),
 ) -> None:
     """Export cost history to CSV or JSON."""
-    from argos_budget_guardian.core.store import Store
-
-    store = Store()
-
-    if format == "csv":
-        out_path = f"{output}.csv"
-        count = store.export_csv(out_path)
-    elif format == "json":
-        out_path = f"{output}.json"
-        count = store.export_json(out_path)
-    else:
-        console.print(f"[red]Unknown format: {format}. Use 'csv' or 'json'.[/red]")
-        store.close()
+    if not DEFAULT_DB_PATH.exists():
+        console.print("[yellow]No cost history to export.[/yellow]")
         return
+
+    if output_format not in ("csv", "json"):
+        console.print(f"[red]Unknown format: {output_format}. Use 'csv' or 'json'.[/red]")
+        raise typer.Exit(code=1)
+
+    with Store() as store:
+        if output_format == "csv":
+            out_path = f"{output}.csv"
+            count = store.export_csv(out_path)
+        else:
+            out_path = f"{output}.json"
+            count = store.export_json(out_path)
 
     if count > 0:
         console.print(f"[green]Exported {count} events to {out_path}[/green]")
     else:
         console.print("[yellow]No events to export.[/yellow]")
-
-    store.close()
 
 
 @app.command()
@@ -229,7 +219,11 @@ def _parse_simple_toml(path: Path) -> dict[str, Any]:
                 current_section[key] = value.lower() == "true"
             else:
                 try:
-                    current_section[key] = float(value)
+                    # Preserve int vs float: only use float if there's a decimal point
+                    if "." in value:
+                        current_section[key] = float(value)
+                    else:
+                        current_section[key] = int(value)
                 except ValueError:
                     current_section[key] = value
     return config

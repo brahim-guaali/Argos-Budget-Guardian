@@ -12,8 +12,9 @@ from argos_budget_guardian.core.tracker import CostEvent, CostTracker
 
 def budget_bar(current: float, maximum: float) -> Panel:
     """Render a color-coded budget utilization bar."""
-    pct = min(current / maximum, 1.0) if maximum > 0 else 0.0
-    pct_display = pct * 100
+    pct_raw = (current / maximum) if maximum > 0 else 0.0
+    pct = min(pct_raw, 1.0)
+    pct_display = pct_raw * 100
 
     if pct < 0.6:
         color = "green"

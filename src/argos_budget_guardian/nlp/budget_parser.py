@@ -14,14 +14,31 @@ from argos_budget_guardian.core.budget import BudgetPolicy
 # Pattern: dollar amount like "$5", "$10.50", "5.00"
 _AMOUNT_PATTERN = re.compile(r"\$?\s*(\d+(?:\.\d+)?)")
 
+# Multi-word phrases are checked first via substring match; single words use
+# word-boundary regex to avoid matching inside other words (e.g. "day" inside
+# "yesterday").
+
 # Scope keywords
-_DAILY_KEYWORDS = {"day", "daily", "today", "per day", "a day", "/day"}
-_GLOBAL_KEYWORDS = {"total", "global", "ever", "lifetime", "overall"}
+_DAILY_PHRASES = {"per day", "a day", "/day"}
+_DAILY_WORDS = {"day", "daily", "today"}
+_GLOBAL_PHRASES = set[str]()
+_GLOBAL_WORDS = {"total", "global", "ever", "lifetime", "overall"}
 
 # Action keywords
-_STOP_KEYWORDS = {"stop", "halt", "block", "deny", "kill"}
-_PAUSE_KEYWORDS = {"pause", "wait", "slow", "cooldown"}
-_WARN_KEYWORDS = {"warn", "alert", "notify", "warning"}
+_STOP_WORDS = {"stop", "halt", "block", "deny", "kill"}
+_PAUSE_WORDS = {"pause", "wait", "slow", "cooldown"}
+_WARN_WORDS = {"warn", "alert", "notify", "warning"}
+
+
+def _has_keyword(text: str, phrases: set[str], words: set[str]) -> bool:
+    """Check if *text* contains any of the given phrases or whole-words."""
+    for phrase in phrases:
+        if phrase in text:
+            return True
+    for word in words:
+        if re.search(rf"\b{re.escape(word)}\b", text):
+            return True
+    return False
 
 
 def parse_budget(text: str) -> BudgetPolicy:
@@ -56,18 +73,18 @@ def parse_budget(text: str) -> BudgetPolicy:
 
     # Determine scope
     scope: Literal["session", "daily", "global"] = "session"
-    if any(kw in lower for kw in _DAILY_KEYWORDS):
+    if _has_keyword(lower, _DAILY_PHRASES, _DAILY_WORDS):
         scope = "daily"
-    elif any(kw in lower for kw in _GLOBAL_KEYWORDS):
+    elif _has_keyword(lower, _GLOBAL_PHRASES, _GLOBAL_WORDS):
         scope = "global"
 
     # Determine action
     action: Literal["warn", "pause", "stop"] = "stop"
-    if any(kw in lower for kw in _WARN_KEYWORDS):
+    if _has_keyword(lower, set(), _WARN_WORDS):
         action = "warn"
-    elif any(kw in lower for kw in _PAUSE_KEYWORDS):
+    elif _has_keyword(lower, set(), _PAUSE_WORDS):
         action = "pause"
-    elif any(kw in lower for kw in _STOP_KEYWORDS):
+    elif _has_keyword(lower, set(), _STOP_WORDS):
         action = "stop"
 
     return BudgetPolicy(

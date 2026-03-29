@@ -53,5 +53,8 @@ class BudgetPolicy:
         return current_cost >= self.warn_threshold_usd and not self.is_over_budget(current_cost)
 
     def utilization_percent(self, current_cost: float) -> float:
-        """Get budget utilization as a percentage."""
-        return min((current_cost / self.max_cost_usd) * 100, 100.0)
+        """Get budget utilization as a percentage.
+
+        Can exceed 100% when spending continues past the limit (e.g. warn mode).
+        """
+        return (current_cost / self.max_cost_usd) * 100

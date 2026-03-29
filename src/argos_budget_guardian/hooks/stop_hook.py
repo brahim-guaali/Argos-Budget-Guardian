@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable
 
 from argos_budget_guardian.core.tracker import CostTracker
-
-HookCallback = Callable[
-    [dict[str, Any], str | None, Any],
-    Coroutine[Any, Any, dict[str, Any]],
-]
+from argos_budget_guardian.hooks.types import HookCallback
 
 
 def make_stop_hook(
