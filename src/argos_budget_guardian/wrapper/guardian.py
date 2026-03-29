@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncGenerator, Callable
 
 from claude_code_sdk import (
     ClaudeCodeOptions,
@@ -74,9 +74,7 @@ class GuardedAgent:
             # current session.  Summing them avoids double-counting because
             # save_event() is only called at the end of a query (ResultMessage),
             # and the store won't include the current session's in-flight cost.
-            get_daily_total = lambda: (  # noqa: E731
-                self._store.get_today_total() + self._tracker.get_global_total()
-            )
+            get_daily_total = self._get_daily_total_from_store
 
         budget_hook = make_budget_hook(
             tracker=self._tracker,
@@ -120,7 +118,12 @@ class GuardedAgent:
 
         return ClaudeCodeOptions(**opts_kwargs)
 
-    async def query(self, prompt: str, **kwargs: Any) -> AsyncIterator[Any]:
+    def _get_daily_total_from_store(self) -> float:
+        """Sum store's daily total and tracker's in-flight total."""
+        assert self._store is not None
+        return self._store.get_today_total() + self._tracker.get_global_total()
+
+    async def query(self, prompt: str, **kwargs: Any) -> AsyncGenerator[Any, None]:
         """Run a query with cost tracking and budget enforcement.
 
         Intercepts the message stream to track costs in real time.
@@ -136,7 +139,8 @@ class GuardedAgent:
                 if message.session_id:
                     self._session_id = message.session_id
 
-                usage = message.usage or {}
+                raw_usage = message.usage
+                usage = raw_usage if isinstance(raw_usage, dict) else {}
                 model = getattr(message, "model", None) or "unknown"
 
                 # Record a cost event from the result's usage data

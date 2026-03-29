@@ -1,5 +1,6 @@
 """Smoke tests for CLI commands."""
 
+import contextlib
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -12,10 +13,15 @@ from argos_budget_guardian.core.store import Store
 runner = CliRunner()
 
 
+@contextlib.contextmanager
 def _temp_store():
-    """Create a store using a temporary database."""
-    tmpdir = tempfile.mkdtemp()
-    return Store(db_path=Path(tmpdir) / "test.db")
+    """Create a store using a temporary database with automatic cleanup."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = Store(db_path=Path(tmpdir) / "test.db")
+        try:
+            yield store
+        finally:
+            store.close()
 
 
 class TestCLI:
@@ -38,15 +44,14 @@ class TestCLI:
         assert "No cost history" in result.output
 
     def test_history_no_sessions(self):
-        store = _temp_store()
-        fake_path = store._db_path
-        with (
-            patch("argos_budget_guardian.cli.main.DEFAULT_DB_PATH", fake_path),
-            patch("argos_budget_guardian.cli.main.Store", return_value=store),
-        ):
-            result = runner.invoke(app, ["history"])
-        assert result.exit_code == 0
-        store.close()
+        with _temp_store() as store:
+            fake_path = store._db_path
+            with (
+                patch("argos_budget_guardian.cli.main.DEFAULT_DB_PATH", fake_path),
+                patch("argos_budget_guardian.cli.main.Store", return_value=store),
+            ):
+                result = runner.invoke(app, ["history"])
+            assert result.exit_code == 0
 
     def test_export_no_history(self):
         fake_path = Path("/tmp/argos-test-nonexistent/history.db")

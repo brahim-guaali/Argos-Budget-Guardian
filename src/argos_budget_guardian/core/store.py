@@ -137,39 +137,43 @@ class Store:
 
     def get_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
         """Get recent sessions ordered by start time."""
-        rows = self._conn.execute(
-            """SELECT session_id, started_at, ended_at, total_cost_usd, num_events
-               FROM sessions ORDER BY started_at DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT session_id, started_at, ended_at, total_cost_usd, num_events
+                   FROM sessions ORDER BY started_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def get_daily_totals(self, days: int = 30) -> list[dict[str, Any]]:
         """Get daily cost totals for the last N days."""
-        rows = self._conn.execute(
-            """SELECT date, total_cost_usd, num_sessions, num_events
-               FROM daily_totals ORDER BY date DESC LIMIT ?""",
-            (days,),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT date, total_cost_usd, num_sessions, num_events
+                   FROM daily_totals ORDER BY date DESC LIMIT ?""",
+                (days,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def get_today_total(self) -> float:
         """Get total cost for today (UTC)."""
-        today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        row = self._conn.execute(
-            "SELECT total_cost_usd FROM daily_totals WHERE date = ?",
-            (today_utc,),
-        ).fetchone()
-        return row["total_cost_usd"] if row else 0.0
+        with self._lock:
+            today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            row = self._conn.execute(
+                "SELECT total_cost_usd FROM daily_totals WHERE date = ?",
+                (today_utc,),
+            ).fetchone()
+            return row["total_cost_usd"] if row else 0.0
 
     def get_session_events(self, session_id: str) -> list[dict[str, Any]]:
         """Get all events for a specific session."""
-        rows = self._conn.execute(
-            """SELECT * FROM cost_events
-               WHERE session_id = ? ORDER BY timestamp""",
-            (session_id,),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT * FROM cost_events
+                   WHERE session_id = ? ORDER BY timestamp""",
+                (session_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def export_csv(self, output_path: Path | str) -> int:
         """Export all cost events to CSV. Returns number of rows exported."""

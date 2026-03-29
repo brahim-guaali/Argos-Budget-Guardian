@@ -68,7 +68,7 @@ class BudgetHook:
                     "decision": "block",
                     "systemMessage": reason,
                 }
-            elif self._policy.action_on_limit == "pause":
+            if self._policy.action_on_limit == "pause":
                 if self._policy.cooldown_seconds > 0:
                     await asyncio.sleep(self._policy.cooldown_seconds)
                 return {
@@ -78,13 +78,13 @@ class BudgetHook:
                         f"Resuming after {self._policy.cooldown_seconds}s cooldown."
                     )
                 }
-            else:  # warn
-                return {
-                    "systemMessage": (
-                        f"[Argos] WARNING: Budget exceeded: "
-                        f"${current_cost:.4f} / ${self._policy.max_cost_usd:.2f}"
-                    )
-                }
+            # warn
+            return {
+                "systemMessage": (
+                    f"[Argos] WARNING: Budget exceeded: "
+                    f"${current_cost:.4f} / ${self._policy.max_cost_usd:.2f}"
+                )
+            }
 
         # Check if at warning threshold
         if self._policy.is_at_warning(current_cost) and not self._warning_emitted:

@@ -15,6 +15,8 @@ class ModelPricing:
     cache_creation_per_million: float | None = None
 
     def __post_init__(self) -> None:
+        # Defaults are approximations based on typical Claude pricing ratios.
+        # Pass explicit values for accuracy when registering custom models.
         if self.cache_read_per_million is None:
             self.cache_read_per_million = self.input_per_million * 0.1
         if self.cache_creation_per_million is None:
@@ -91,11 +93,19 @@ class PricingRegistry:
         # Try matching: model must be a full prefix of a key, or a key must be
         # a full prefix of model.  Require at least the "claude-<family>-X-Y"
         # pattern (e.g. "claude-haiku-4-5") to avoid overly loose matches.
+        # Return the longest matching key to avoid ambiguity.
         min_prefix = len("claude-haiku-4-5")  # 15 chars — shortest valid base name
+        best: tuple[int, str] | None = None  # (match_length, key)
         for key in self._models:
-            if model.startswith(key) or (key.startswith(model) and len(model) >= min_prefix):
-                return self._models[key]
-        return None
+            if model.startswith(key):
+                match_len = len(key)
+            elif key.startswith(model) and len(model) >= min_prefix:
+                match_len = len(model)
+            else:
+                continue
+            if best is None or match_len > best[0]:
+                best = (match_len, key)
+        return self._models[best[1]] if best else None
 
     def estimate_cost(
         self,
