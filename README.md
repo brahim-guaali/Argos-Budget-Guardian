@@ -23,9 +23,18 @@ AI agents built with the Claude Agent SDK can spiral in cost — retrying, loopi
 
 ## Quick Start
 
+### Installation
+
 ```bash
 pip install argos-budget-guardian
 ```
+
+> **Note:** Python 3.10+ required. If you get an `externally-managed-environment` error, use a virtual environment:
+> ```bash
+> python3 -m venv myenv && source myenv/bin/activate && pip install argos-budget-guardian
+> ```
+
+### Minimal example
 
 ```python
 from argos_budget_guardian import guarded_query
