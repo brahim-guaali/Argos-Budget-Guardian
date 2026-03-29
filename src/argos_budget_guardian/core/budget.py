@@ -34,7 +34,8 @@ class BudgetPolicy:
         if self.max_cost_usd <= 0:
             raise ValueError(f"max_cost_usd must be positive, got {self.max_cost_usd}")
         if not 0 < self.warn_at_percent <= 100:
-            raise ValueError(f"warn_at_percent must be between 0 and 100, got {self.warn_at_percent}")
+            msg = f"warn_at_percent must be between 0 and 100, got {self.warn_at_percent}"
+            raise ValueError(msg)
         if self.cooldown_seconds < 0:
             raise ValueError(f"cooldown_seconds must be non-negative, got {self.cooldown_seconds}")
 

@@ -110,7 +110,9 @@ class TestStopHook:
             CostEvent.create(model="s", tool_name="t", cost_usd=1.5, session_id="s1")
         )
         received = []
-        hook = make_stop_hook(tracker, on_session_end=lambda sid, cost: received.append((sid, cost)))
+        def _on_end(sid, cost):  # noqa: E731
+            received.append((sid, cost))
+        hook = make_stop_hook(tracker, on_session_end=_on_end)
         await hook(
             {"hook_event_name": "Stop", "session_id": "s1"},
             "",
@@ -126,7 +128,9 @@ class TestStopHook:
             CostEvent.create(model="s", tool_name="t", cost_usd=0.5, session_id="s1")
         )
         received = []
-        hook = make_stop_hook(tracker, on_session_end=lambda sid, cost: received.append((sid, cost)))
+        def _on_end(sid, cost):
+            received.append((sid, cost))
+        hook = make_stop_hook(tracker, on_session_end=_on_end)
         await hook(
             {"hook_event_name": "SubagentStop", "session_id": "s1"},
             "",
@@ -138,6 +142,8 @@ class TestStopHook:
     async def test_ignores_other_events(self):
         tracker = CostTracker()
         received = []
-        hook = make_stop_hook(tracker, on_session_end=lambda sid, cost: received.append((sid, cost)))
+        def _on_end(sid, cost):
+            received.append((sid, cost))
+        hook = make_stop_hook(tracker, on_session_end=_on_end)
         await hook({"hook_event_name": "PreToolUse"}, "", None)
         assert len(received) == 0

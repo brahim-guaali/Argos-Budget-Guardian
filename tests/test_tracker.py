@@ -1,6 +1,6 @@
 """Tests for the cost tracker."""
 
-from argos_budget_guardian.core.tracker import CostEvent, CostTracker
+from argos_budget_guardian.core.tracker import CostEvent
 
 
 class TestCostEvent:
@@ -79,7 +79,8 @@ class TestCostTracker:
 
     def test_remove_callback(self, tracker):
         received = []
-        cb = lambda e: received.append(e)
+        def cb(e):
+            received.append(e)
         tracker.on_update(cb)
         tracker.remove_callback(cb)
         event = CostEvent.create(model="s", tool_name="t", cost_usd=0.1, session_id="s1")

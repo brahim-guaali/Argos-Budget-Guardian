@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -33,7 +32,9 @@ def status() -> None:
     try:
         store = Store()
     except Exception:
-        console.print("[yellow]No cost history found. Run an agent with GuardedAgent first.[/yellow]")
+        console.print(
+            "[yellow]No cost history found. Run an agent with GuardedAgent first.[/yellow]"
+        )
         return
 
     today_total = store.get_today_total()
@@ -46,7 +47,9 @@ def status() -> None:
 
     if sessions:
         last = sessions[0]
-        console.print(f"  Last session:     ${last['total_cost_usd']:.4f} ({last['num_events']} events)")
+        cost = last['total_cost_usd']
+        events = last['num_events']
+        console.print(f"  Last session:     ${cost:.4f} ({events} events)")
         console.print(f"  Started:          {last['started_at']}")
     else:
         console.print("  [dim]No sessions recorded yet.[/dim]")
@@ -98,7 +101,8 @@ def history(
 
     # Summary
     total = sum(s["total_cost_usd"] for s in sessions)
-    console.print(f"\n  Total across {len(sessions)} sessions: [bold green]${total:.4f}[/bold green]\n")
+    n = len(sessions)
+    console.print(f"\n  Total across {n} sessions: [bold green]${total:.4f}[/bold green]\n")
 
     store.close()
 
@@ -107,7 +111,6 @@ def history(
 def dashboard() -> None:
     """Launch live terminal dashboard."""
     from argos_budget_guardian.core.budget import BudgetPolicy
-    from argos_budget_guardian.core.store import Store
     from argos_budget_guardian.core.tracker import CostTracker
     from argos_budget_guardian.dashboard.terminal import run_dashboard
 
@@ -138,7 +141,9 @@ def config(
 @app.command()
 def export(
     format: str = typer.Option("csv", "--format", "-f", help="Export format: csv or json"),
-    output: str = typer.Option("argos_export", "--output", "-o", help="Output file path (without extension)"),
+    output: str = typer.Option(
+        "argos_export", "--output", "-o", help="Output file path (without extension)"
+    ),
 ) -> None:
     """Export cost history to CSV or JSON."""
     from argos_budget_guardian.core.store import Store

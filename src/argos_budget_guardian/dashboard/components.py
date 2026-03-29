@@ -22,7 +22,7 @@ def budget_bar(current: float, maximum: float) -> Panel:
     else:
         color = "red"
 
-    bar = ProgressBar(total=100, completed=pct_display, style=f"bar.back", complete_style=color)
+    bar = ProgressBar(total=100, completed=pct_display, style="bar.back", complete_style=color)
 
     label = Text.assemble(
         ("Budget: ", "bold"),

@@ -1,6 +1,6 @@
 """Tests for the pricing registry."""
 
-from argos_budget_guardian.core.pricing import ModelPricing, PricingRegistry, default_registry
+from argos_budget_guardian.core.pricing import ModelPricing, default_registry
 
 
 class TestModelPricing:

@@ -44,7 +44,12 @@ def make_budget_hook(
             return {}
 
         session_id = input_data.get("session_id", "")
-        current_cost = tracker.get_session_total(session_id)
+        if policy.scope == "session":
+            current_cost = tracker.get_session_total(session_id)
+        else:
+            # "daily" and "global" both check total across all sessions;
+            # daily reset is handled externally by the tracker/store layer.
+            current_cost = tracker.get_global_total()
 
         # Check if over budget
         if policy.is_over_budget(current_cost):
