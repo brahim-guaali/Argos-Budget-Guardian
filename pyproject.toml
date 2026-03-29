@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "argos-budget-guardian"
+version = "0.1.0"
+description = "Real-time cost tracking and budget enforcement for the Claude Agent SDK"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Brahim Guaali", email = "guaalibrahim@gmail.com" },
+]
+keywords = ["claude", "agent", "budget", "cost", "tracking", "anthropic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "claude-code-sdk>=0.0.10",
+    "rich>=13.0",
+    "typer>=0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+argos = "argos_budget_guardian.cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/brahim-guaali/Argos-Budget-Guardian"
+Repository = "https://github.com/brahim-guaali/Argos-Budget-Guardian"
+Issues = "https://github.com/brahim-guaali/Argos-Budget-Guardian/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/argos_budget_guardian"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
