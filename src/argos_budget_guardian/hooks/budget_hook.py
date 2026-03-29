@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Coroutine
 
+
 from argos_budget_guardian.core.budget import BudgetPolicy
 from argos_budget_guardian.core.tracker import CostTracker
 
 HookCallback = Callable[
-    [dict[str, Any], str, Any],
+    [dict[str, Any], str | None, Any],
     Coroutine[Any, Any, dict[str, Any]],
 ]
 
@@ -19,6 +20,7 @@ def make_budget_hook(
     policy: BudgetPolicy,
     on_warning: Callable[[float, float], Any] | None = None,
     on_limit: Callable[[float, float], Any] | None = None,
+    get_daily_total: Callable[[], float] | None = None,
 ) -> HookCallback:
     """Create a PreToolUse hook that enforces budget limits.
 
@@ -27,6 +29,7 @@ def make_budget_hook(
         policy: The budget policy to enforce.
         on_warning: Optional callback when warning threshold is reached.
         on_limit: Optional callback when budget limit is reached.
+        get_daily_total: Optional callable returning today's spending (for daily scope).
 
     Returns:
         An async hook function compatible with Claude Agent SDK.
@@ -35,7 +38,7 @@ def make_budget_hook(
 
     async def budget_check_hook(
         input_data: dict[str, Any],
-        tool_use_id: str,
+        tool_use_id: str | None,
         context: Any,
     ) -> dict[str, Any]:
         nonlocal _warning_emitted
@@ -46,9 +49,12 @@ def make_budget_hook(
         session_id = input_data.get("session_id", "")
         if policy.scope == "session":
             current_cost = tracker.get_session_total(session_id)
-        else:
-            # "daily" and "global" both check total across all sessions;
-            # daily reset is handled externally by the tracker/store layer.
+        elif policy.scope == "daily":
+            if get_daily_total is not None:
+                current_cost = get_daily_total()
+            else:
+                current_cost = tracker.get_global_total()
+        else:  # global
             current_cost = tracker.get_global_total()
 
         # Check if over budget
@@ -56,17 +62,16 @@ def make_budget_hook(
             if on_limit:
                 on_limit(current_cost, policy.max_cost_usd)
 
+            reason = (
+                f"[Argos] Budget limit reached: "
+                f"${current_cost:.4f} / ${policy.max_cost_usd:.2f} "
+                f"({policy.utilization_percent(current_cost):.0f}%)"
+            )
+
             if policy.action_on_limit == "stop":
                 return {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PreToolUse",
-                        "permissionDecision": "deny",
-                        "permissionDecisionReason": (
-                            f"[Argos] Budget limit reached: "
-                            f"${current_cost:.4f} / ${policy.max_cost_usd:.2f} "
-                            f"({policy.utilization_percent(current_cost):.0f}%)"
-                        ),
-                    }
+                    "decision": "block",
+                    "systemMessage": reason,
                 }
             elif policy.action_on_limit == "pause":
                 if policy.cooldown_seconds > 0:

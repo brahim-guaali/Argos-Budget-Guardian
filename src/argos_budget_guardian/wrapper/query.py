@@ -37,6 +37,3 @@ async def guarded_query(
     async with agent:
         async for message in agent.query(prompt, **kwargs):
             yield message
-
-    # Print cost report at the end
-    print(agent.cost_report())

@@ -1,19 +1,21 @@
-"""GuardedAgent — drop-in wrapper for ClaudeSDKClient with budget enforcement."""
+"""GuardedAgent — drop-in wrapper for claude_code_sdk.query() with budget enforcement."""
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, AsyncIterator, Callable
 
 from claude_code_sdk import (
     AssistantMessage,
     ClaudeCodeOptions,
-    ClaudeSDKClient,
     HookMatcher,
     ResultMessage,
+    query as sdk_query,
 )
 
 from argos_budget_guardian.core.budget import BudgetPolicy
 from argos_budget_guardian.core.pricing import PricingRegistry, default_registry
+from argos_budget_guardian.core.store import Store
 from argos_budget_guardian.core.tracker import CostEvent, CostTracker
 from argos_budget_guardian.hooks.budget_hook import make_budget_hook
 from argos_budget_guardian.hooks.stop_hook import make_stop_hook
@@ -21,7 +23,8 @@ from argos_budget_guardian.nlp.budget_parser import parse_budget
 
 
 class GuardedAgent:
-    """Drop-in wrapper around ClaudeSDKClient with real-time cost tracking and budget enforcement.
+    """Drop-in wrapper around claude_code_sdk.query() with real-time cost tracking
+    and budget enforcement.
 
     Usage:
         async with GuardedAgent(budget=5.0) as agent:
@@ -38,6 +41,7 @@ class GuardedAgent:
         on_limit: Callable[[float, float], Any] | None = None,
         dashboard: bool = False,
         pricing: PricingRegistry | None = None,
+        store: Store | None = None,
     ) -> None:
         # Parse budget
         if isinstance(budget, (int, float)):
@@ -52,8 +56,8 @@ class GuardedAgent:
         self._on_warning = on_warning
         self._on_limit = on_limit
         self._dashboard = dashboard
-        self._client: ClaudeSDKClient | None = None
-        self._current_session_id: str = ""
+        self._store = store
+        self._session_id: str = str(uuid.uuid4())
 
         # Build options with merged hooks
         self._options = self._build_options(options)
@@ -61,11 +65,22 @@ class GuardedAgent:
     def _build_options(self, user_options: ClaudeCodeOptions | None) -> ClaudeCodeOptions:
         """Build ClaudeCodeOptions with guardian hooks merged in."""
         # Create guardian hooks
+        get_daily_total: Callable[[], float] | None = None
+        if self._policy.scope in ("daily", "global") and self._store is not None:
+            # Store holds costs from *previous* sessions; tracker holds the
+            # current session.  Summing them avoids double-counting because
+            # save_event() is only called at the end of a query (ResultMessage),
+            # and the store won't include the current session's in-flight cost.
+            get_daily_total = lambda: (  # noqa: E731
+                self._store.get_today_total() + self._tracker.get_global_total()
+            )
+
         budget_hook = make_budget_hook(
             tracker=self._tracker,
             policy=self._policy,
             on_warning=self._on_warning,
             on_limit=self._on_limit,
+            get_daily_total=get_daily_total,
         )
         stop_hook = make_stop_hook(tracker=self._tracker)
 
@@ -106,47 +121,38 @@ class GuardedAgent:
         Intercepts the message stream to track costs in real time.
         Yields all messages through to the caller.
         """
-        if self._client is None:
-            self._client = ClaudeSDKClient(options=self._options)
-            await self._client.connect()
+        async for message in sdk_query(prompt=prompt, options=self._options, **kwargs):
+            # Track costs from ResultMessage (authoritative)
+            if isinstance(message, ResultMessage):
+                if message.session_id:
+                    self._session_id = message.session_id
 
-        await self._client.query(prompt, **kwargs)
+                usage = message.usage or {}
+                model = getattr(message, "model", None) or "unknown"
 
-        last_model = "unknown"
-
-        async for message in self._client.receive_response():
-            # Track costs from AssistantMessage usage
-            if isinstance(message, AssistantMessage):
-                last_model = getattr(message, "model", last_model)
-                usage = getattr(message, "usage", None)
-                if usage and isinstance(usage, dict):
-                    cost = self._pricing.estimate_cost(
-                        model=last_model,
+                # Record a cost event from the result's usage data
+                if message.total_cost_usd is not None:
+                    event = CostEvent.create(
+                        model=model,
+                        tool_name="query",
                         input_tokens=usage.get("input_tokens", 0),
                         output_tokens=usage.get("output_tokens", 0),
                         cache_read_tokens=usage.get("cache_read_input_tokens", 0),
                         cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
+                        cost_usd=message.total_cost_usd,
+                        session_id=self._session_id,
                     )
-                    if cost > 0:
-                        self._tracker.record(
-                            CostEvent.create(
-                                model=last_model,
-                                tool_name="api_call",
-                                input_tokens=usage.get("input_tokens", 0),
-                                output_tokens=usage.get("output_tokens", 0),
-                                cache_read_tokens=usage.get("cache_read_input_tokens", 0),
-                                cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
-                                cost_usd=cost,
-                                session_id=self._current_session_id,
-                            )
-                        )
+                    # Use reconcile to set the authoritative total instead of
+                    # accumulating (avoids double-counting if tracker already
+                    # has estimates from hooks).
+                    self._tracker.record(event)
+                    self._tracker.reconcile(
+                        self._session_id, message.total_cost_usd
+                    )
 
-            # Reconcile with authoritative cost at session end
-            if isinstance(message, ResultMessage):
-                self._current_session_id = getattr(message, "session_id", "")
-                actual_cost = getattr(message, "total_cost_usd", None)
-                if actual_cost is not None and self._current_session_id:
-                    self._tracker.reconcile(self._current_session_id, actual_cost)
+                    # Persist to store if configured
+                    if self._store is not None:
+                        self._store.save_event(event)
 
             yield message
 
@@ -174,6 +180,11 @@ class GuardedAgent:
     def policy(self) -> BudgetPolicy:
         """Access the budget policy."""
         return self._policy
+
+    @property
+    def session_id(self) -> str:
+        """Current session ID."""
+        return self._session_id
 
     def cost_report(self) -> str:
         """Generate a human-readable cost report."""
@@ -211,11 +222,9 @@ class GuardedAgent:
         return "\n".join(lines)
 
     async def __aenter__(self) -> GuardedAgent:
-        self._client = ClaudeSDKClient(options=self._options)
-        await self._client.connect()
         return self
 
     async def __aexit__(self, *args: Any) -> None:
-        if self._client:
-            await self._client.disconnect()
-            self._client = None
+        # Finalize store session if configured
+        if self._store is not None:
+            self._store.finalize_session(self._session_id, self.total_cost)

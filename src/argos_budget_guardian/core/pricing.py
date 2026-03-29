@@ -88,9 +88,12 @@ class PricingRegistry:
         canonical = self._aliases.get(model)
         if canonical and canonical in self._models:
             return self._models[canonical]
-        # Try prefix matching for versioned model strings
+        # Try matching: model must be a full prefix of a key, or a key must be
+        # a full prefix of model.  Require at least the "claude-<family>-X-Y"
+        # pattern (e.g. "claude-haiku-4-5") to avoid overly loose matches.
+        _MIN_PREFIX = len("claude-haiku-4-5")  # 15 chars — shortest valid base name
         for key in self._models:
-            if model.startswith(key) or key.startswith(model):
+            if model.startswith(key) or (key.startswith(model) and len(model) >= _MIN_PREFIX):
                 return self._models[key]
         return None
 

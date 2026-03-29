@@ -102,6 +102,10 @@ class TestGuardedAgentProperties:
         assert "Budget" in report
         assert "$10.00" in report
 
+    def test_session_id_generated(self) -> None:
+        agent = _make_agent(budget=5.0)
+        assert agent.session_id  # Non-empty UUID
+
 
 # ---------------------------------------------------------------------------
 # Cost tracking simulation (what query() does internally)
@@ -207,12 +211,12 @@ class TestBudgetHookScopeIntegration:
             CostEvent.create(model="m", tool_name="t", cost_usd=0.5, session_id="s2")
         )
 
-        # Daily scope checks global total (1.1 >= 1.0) — should deny
+        # Daily scope checks global total (1.1 >= 1.0) — should block
         result = await hook(
             {"hook_event_name": "PreToolUse", "session_id": "s1"}, "tid", None
         )
-        assert "hookSpecificOutput" in result
-        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert result["decision"] == "block"
+        assert "Budget limit reached" in result["systemMessage"]
 
     @pytest.mark.asyncio
     async def test_global_scope_checks_global_total(self) -> None:
@@ -232,5 +236,21 @@ class TestBudgetHookScopeIntegration:
         result = await hook(
             {"hook_event_name": "PreToolUse", "session_id": "s1"}, "tid", None
         )
-        assert "hookSpecificOutput" in result
-        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert result["decision"] == "block"
+        assert "Budget limit reached" in result["systemMessage"]
+
+    @pytest.mark.asyncio
+    async def test_daily_scope_with_store_callable(self) -> None:
+        from argos_budget_guardian.hooks.budget_hook import make_budget_hook
+
+        tracker = CostTracker()
+        policy = BudgetPolicy(max_cost_usd=5.0, scope="daily")
+        # Simulate store returning high daily total
+        hook = make_budget_hook(
+            tracker=tracker, policy=policy, get_daily_total=lambda: 5.5
+        )
+
+        result = await hook(
+            {"hook_event_name": "PreToolUse", "session_id": "s1"}, "tid", None
+        )
+        assert result["decision"] == "block"

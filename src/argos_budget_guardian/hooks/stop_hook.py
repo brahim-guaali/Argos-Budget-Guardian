@@ -7,7 +7,7 @@ from typing import Any, Callable, Coroutine
 from argos_budget_guardian.core.tracker import CostTracker
 
 HookCallback = Callable[
-    [dict[str, Any], str, Any],
+    [dict[str, Any], str | None, Any],
     Coroutine[Any, Any, dict[str, Any]],
 ]
 
@@ -28,7 +28,7 @@ def make_stop_hook(
 
     async def stop_hook(
         input_data: dict[str, Any],
-        tool_use_id: str,
+        tool_use_id: str | None,
         context: Any,
     ) -> dict[str, Any]:
         event_name = input_data.get("hook_event_name", "")

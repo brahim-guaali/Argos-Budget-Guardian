@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -115,8 +116,16 @@ def dashboard() -> None:
     from argos_budget_guardian.dashboard.terminal import run_dashboard
 
     config = _load_config()
-    budget = config.get("budget", 10.0)
-    policy = BudgetPolicy(max_cost_usd=budget)
+    budget_section = config.get("budget", {})
+    if isinstance(budget_section, dict):
+        budget = budget_section.get("default_budget_usd", 10.0)
+    else:
+        console.print(
+            "[yellow]Warning: 'budget' in config should be a [budget] section, "
+            "using default $10.00[/yellow]"
+        )
+        budget = 10.0
+    policy = BudgetPolicy(max_cost_usd=float(budget))
     tracker = CostTracker()
 
     console.print("[dim]Starting dashboard... Press Ctrl+C to exit.[/dim]")
@@ -177,24 +186,52 @@ def version() -> None:
     console.print(f"Argos Budget Guardian v{__version__}")
 
 
-def _load_config() -> dict:
+def _load_config() -> dict[str, Any]:
     """Load config from TOML file if it exists."""
     config_path = Path.home() / ".argos-budget-guardian" / "config.toml"
     if not config_path.exists():
         return {}
 
-    # Simple TOML parsing for basic key=value pairs
-    config: dict = {}
-    for line in config_path.read_text().splitlines():
+    # Use tomllib (3.11+) or tomli if available, fall back to simple parser
+    try:
+        import tomllib  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        try:
+            import tomli as tomllib  # type: ignore[import-not-found, no-redef]
+        except ModuleNotFoundError:
+            return _parse_simple_toml(config_path)
+
+    with open(config_path, "rb") as f:
+        return tomllib.load(f)
+
+
+def _parse_simple_toml(path: Path) -> dict[str, Any]:
+    """Minimal section-aware TOML parser for basic config files.
+
+    Note: Does not handle dotted section headers (e.g. [budget.limits]) or
+    inline tables.  Use tomllib/tomli for full TOML support.
+    """
+    config: dict[str, Any] = {}
+    current_section = config
+    for line in path.read_text().splitlines():
         line = line.strip()
-        if "=" in line and not line.startswith("#") and not line.startswith("["):
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section_name = line[1:-1].strip()
+            config[section_name] = {}
+            current_section = config[section_name]
+        elif "=" in line:
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip().strip('"')
-            try:
-                config[key] = float(value)
-            except ValueError:
-                config[key] = value
+            if value.lower() in ("true", "false"):
+                current_section[key] = value.lower() == "true"
+            else:
+                try:
+                    current_section[key] = float(value)
+                except ValueError:
+                    current_section[key] = value
     return config
 
 

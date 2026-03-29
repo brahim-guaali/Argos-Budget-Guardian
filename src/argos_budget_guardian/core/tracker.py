@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -77,7 +80,10 @@ class CostTracker:
             self._global_total += event.cost_usd
 
         for callback in self._callbacks:
-            callback(event)
+            try:
+                callback(event)
+            except Exception:
+                logger.exception("Error in cost tracker callback")
 
     def get_session_total(self, session_id: str) -> float:
         """Get total cost for a specific session."""

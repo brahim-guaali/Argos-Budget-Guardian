@@ -42,8 +42,8 @@ class TestBudgetHook:
         policy = BudgetPolicy(max_cost_usd=5.0, action_on_limit="stop")
         hook = make_budget_hook(tracker_with_cost, policy)
         result = await hook(_make_input(), "tu1", None)
-        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
-        assert "Budget limit reached" in result["hookSpecificOutput"]["permissionDecisionReason"]
+        assert result["decision"] == "block"
+        assert "Budget limit reached" in result["systemMessage"]
 
     @pytest.mark.asyncio
     async def test_warns_at_threshold(self):
@@ -63,7 +63,7 @@ class TestBudgetHook:
         hook = make_budget_hook(tracker_with_cost, policy)
         result = await hook(_make_input(), "tu1", None)
         assert "systemMessage" in result
-        assert "hookSpecificOutput" not in result  # Does not deny
+        assert "decision" not in result  # Does not block
 
     @pytest.mark.asyncio
     async def test_calls_on_limit_callback(self, tracker_with_cost):
@@ -100,6 +100,28 @@ class TestBudgetHook:
         hook = make_budget_hook(tracker, policy)
         result = await hook({"hook_event_name": "PostToolUse"}, "tu1", None)
         assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_daily_scope_uses_get_daily_total(self):
+        tracker = CostTracker()
+        policy = BudgetPolicy(max_cost_usd=5.0, scope="daily")
+        # get_daily_total returns 6.0 — over budget
+        hook = make_budget_hook(tracker, policy, get_daily_total=lambda: 6.0)
+        result = await hook(_make_input(), "tu1", None)
+        assert result["decision"] == "block"
+        assert "Budget limit reached" in result["systemMessage"]
+
+    @pytest.mark.asyncio
+    async def test_daily_scope_falls_back_to_global(self):
+        tracker = CostTracker()
+        tracker.record(
+            CostEvent.create(model="s", tool_name="t", cost_usd=6.0, session_id="s1")
+        )
+        policy = BudgetPolicy(max_cost_usd=5.0, scope="daily")
+        # No get_daily_total — falls back to global total
+        hook = make_budget_hook(tracker, policy)
+        result = await hook(_make_input(), "tu1", None)
+        assert result["decision"] == "block"
 
 
 class TestStopHook:

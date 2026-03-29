@@ -1,10 +1,21 @@
 """Smoke tests for CLI commands."""
 
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
 from typer.testing import CliRunner
 
 from argos_budget_guardian.cli.main import app
+from argos_budget_guardian.core.store import Store
 
 runner = CliRunner()
+
+
+def _temp_store():
+    """Create a store using a temporary database."""
+    tmpdir = tempfile.mkdtemp()
+    return Store(db_path=Path(tmpdir) / "test.db")
 
 
 class TestCLI:
@@ -19,10 +30,25 @@ class TestCLI:
         assert "Argos Budget Guardian" in result.output
 
     def test_status_no_history(self):
-        result = runner.invoke(app, ["status"])
-        # Should not crash even with no history
+        with patch("argos_budget_guardian.core.store.Store", side_effect=Exception("no db")):
+            result = runner.invoke(app, ["status"])
         assert result.exit_code == 0
 
     def test_history_no_sessions(self):
-        result = runner.invoke(app, ["history"])
+        store = _temp_store()
+        with patch("argos_budget_guardian.core.store.Store", return_value=store):
+            result = runner.invoke(app, ["history"])
         assert result.exit_code == 0
+        store.close()
+
+    def test_config_section_aware(self):
+        """Test that _load_config correctly parses TOML sections."""
+        from argos_budget_guardian.cli.main import _parse_simple_toml
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+            f.write('[budget]\ndefault_budget_usd = 25.0\n\n[dashboard]\nshow_by_default = true\n')
+            f.flush()
+            config = _parse_simple_toml(Path(f.name))
+
+        assert config["budget"]["default_budget_usd"] == 25.0
+        assert config["dashboard"]["show_by_default"] is True
