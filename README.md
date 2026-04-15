@@ -1,8 +1,20 @@
+<div align="center">
+
 # Argos Budget Guardian
 
-> Real-time cost tracking and budget enforcement for the Claude Agent SDK
+**Real-time cost tracking and budget enforcement for the Claude Agent SDK**
 
-Named after **Argos Panoptes** — the all-seeing giant of Greek mythology with 100 eyes who never slept — because this tool watches every token, every tool call, every dollar.
+[![CI](https://github.com/brahim-guaali/Argos-Budget-Guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/brahim-guaali/Argos-Budget-Guardian/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/argos-budget-guardian.svg)](https://pypi.org/project/argos-budget-guardian/)
+[![Python 3.10+](https://img.shields.io/pypi/pyversions/argos-budget-guardian.svg)](https://pypi.org/project/argos-budget-guardian/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
+*Named after [Argos Panoptes](https://en.wikipedia.org/wiki/Argus_Panoptes) — the all-seeing giant of Greek mythology with 100 eyes who never slept — because this tool watches every token, every tool call, every dollar.*
+
+</div>
+
+---
 
 ## The Problem
 
@@ -189,10 +201,22 @@ async for msg in guarded_query(prompt, budget=5.0, options=None):
     ...
 ```
 
+## Architecture
+
+```
+argos_budget_guardian/
+  core/         # Cost tracker, pricing engine, budget policy, SQLite store
+  hooks/        # Claude SDK hooks for budget enforcement (PreToolUse, Stop)
+  wrapper/      # GuardedAgent and guarded_query() — the public API
+  nlp/          # Natural language budget parser
+  dashboard/    # Rich-based live terminal dashboard
+  cli/          # Typer CLI (argos setup/status/history/dashboard/export)
+```
+
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT
+[MIT](LICENSE)
