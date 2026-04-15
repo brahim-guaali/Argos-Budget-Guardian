@@ -4,7 +4,7 @@
 
 **Real-time cost tracking and budget enforcement for the Claude Agent SDK**
 
-[![CI](https://github.com/brahim-guaali/Argos-Budget-Guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/brahim-guaali/Argos-Budget-Guardian/actions/workflows/ci.yml)
+[![CI](https://github.com/brahim-guaali/argos-budget-guardian/actions/workflows/ci.yml/badge.svg)](https://github.com/brahim-guaali/argos-budget-guardian/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/argos-budget-guardian.svg)](https://pypi.org/project/argos-budget-guardian/)
 [![Python 3.10+](https://img.shields.io/pypi/pyversions/argos-budget-guardian.svg)](https://pypi.org/project/argos-budget-guardian/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)

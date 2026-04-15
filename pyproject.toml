@@ -42,9 +42,9 @@ dev = [
 argos = "argos_budget_guardian.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/brahim-guaali/Argos-Budget-Guardian"
-Repository = "https://github.com/brahim-guaali/Argos-Budget-Guardian"
-Issues = "https://github.com/brahim-guaali/Argos-Budget-Guardian/issues"
+Homepage = "https://github.com/brahim-guaali/argos-budget-guardian"
+Repository = "https://github.com/brahim-guaali/argos-budget-guardian"
+Issues = "https://github.com/brahim-guaali/argos-budget-guardian/issues"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["PLAN.md"]

@@ -6,8 +6,8 @@ Thanks for your interest in contributing! This guide will help you get started.
 
 ```bash
 # Clone the repo
-git clone https://github.com/brahim-guaali/Argos-Budget-Guardian.git
-cd Argos-Budget-Guardian
+git clone https://github.com/brahim-guaali/argos-budget-guardian.git
+cd argos-budget-guardian
 
 # Create a virtual environment and install dev dependencies
 python3 -m venv .venv
@@ -61,7 +61,7 @@ src/argos_budget_guardian/
 
 ## Reporting Issues
 
-File issues at [GitHub Issues](https://github.com/brahim-guaali/Argos-Budget-Guardian/issues). Include:
+File issues at [GitHub Issues](https://github.com/brahim-guaali/argos-budget-guardian/issues). Include:
 
 - What you expected vs. what happened
 - Python version and OS
